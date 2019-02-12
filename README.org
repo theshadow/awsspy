@@ -1,0 +1,295 @@
+#+TITLE: AWS Spy - User's Guide
+#+SETUPFILE: https://fniessen.github.io/org-html-themes/setup/theme-readtheorg.setup
+#+HTML_HEAD: <style>pre.src{background:#343131;color:white;} </style>
+#+OPTIONS: ^:nil
+#+AUTHOR: SynapsLabs
+
+
+* Introduction
+
+/AWS Spy/ is a terminal application for building informational /dashboards/. Dashboards contain one or more /widgets/
+which poll the /data sources/ for information and update the /views/. This guide is meant for people who want to build
+and configure dashboards.
+
+The core system of AWS Spy is that it provides dashboards. These dashboards represent logical views of information.
+Each dashboard may contain one or more widgets and they may be cycled through using keyboard and mouse inputs. See
+[[Application input and navigation]] for more information. Each widget represents a specific topic of information.
+
+Widgets are the core component for rendering information on a dashboard. They manage the migration of data from the
+data source to the view. Widgets represent a specific topic of information such as the state of the AWS CodePipelines
+or CloudFormation stacks found in an account.
+
+Data sources interact with the remote API's to retrieve new information. There are two basic data source types. Those
+that /poll/ for new information and those that /subscribe/ to information. When possible it's recommended that the
+subscription model is used as the polling type can cause additional load and usage costs.
+
+Finally, Views are the visual representation of information. Such as a the state of CodePipelines being represented as
+a list with a status icon associated with each of the rows.
+
+* Installation/Uninstallation
+
+Fow now drop the binary in to a valid =$PATH= path and execute.
+
+* Configuration
+
+#+NAME: awsspy.yml
+#+BEGIN_SRC yaml
+  Version: 1.0.0
+  Sessions:
+    - Name: default
+      Profile: default
+      Region: us-west-2
+  Widgets:
+    - Name: USWest2CodePipelines
+      Properties:
+        Label: Code Pipelines - us-west-2
+        Service:
+          Type: Data::PollingService
+          View:
+            Type: Views::StatusList
+            Properties:
+              StatusMap: CodePipeline
+            Width: 40
+            Height: 10
+          Client:
+            Type: Clients::CodePipelines
+            Properties:
+              Session: default
+          Properties:
+            Interval: 5s
+    - Name: CFNStacksUSWest2
+      Properties:
+        Label: CFN Stacks - us-west-2
+        Service:
+          Type: Data::PollingService
+          View:
+            Type: Views::StatusList
+            Properties:
+              StatusMap: CloudFormationStack
+            Width: 40
+            Height: 10
+          Client:
+            Type: Clients::CloudFormationStacks
+            Properties:
+              Session: default
+          Properties:
+            Interval: 5s
+  Screens:
+    - Name: "1"
+      Layout:
+        Rows:
+          - Columns:
+            - Span: 3
+              Offset: 0
+              Widgets:
+                - USWest2CodePipelines
+            - Span: 3
+              Offset: 0
+              Widgets:
+                - CFNStacksUSWest2
+#+END_SRC
+
+- Version :: The version of the configuration schema. For now the only valid value is =1.0.0=
+- Widgets :: Represents the /Service/, /View/, and /Client/.
+- Screens :: Represents a collection of widgets (not yet implemented)
+
+*** Widgets
+
+A widget is the logical grouping of a /Service/, /View/, and /Client/. A service controls and manages
+how updates are received and how the View receives that data. The View is responsible for the visual
+rendering on the screen. The Client is is the contact point between AWS Spy and the /Data Source/.
+
+**** Service
+
+A service controls the flow of information from a Client to a View. At the time of this writing 
+there is a single service type =Data::PollingService=. This service will poll the defined clients 
+once per each cycle of the specified interval. There are plans in the future for a /PubSub/ style
+client so that the network load is lessened.
+
+- Service :: /object/ Definition of the controller that marshals the data from the client to the view.
+- Service.Type :: /string/ Defines the type of service to create
+- Service.View :: /object/ Defines the view to use for rendering the data.
+- Service.Client :: /object/ Defines the client to use for retrieving data.
+
+
+**** View
+
+A view represents the visual elements found in the terminal. At the time of this writing there is
+a single view, the =Views::StatusList=. It accepts a key-value pair of names to status' and references
+a defined /Status Map/ to determine what icon to display. Future items will include spark lines,
+bar charts, gauges, plots, banners, and more.
+
+- Type :: The type of view to create. See the section on [[Views]] for more information.
+
+
+**** Client
+
+Clients are the touchstone between the data source and the rest of the application. This is the point
+where data is retrieved from remote sources, parsed, and provided to the View for rendering.
+
+** Views
+
+*** Views::StatusList
+
+- Properties :: /map[string]string/ see table below for valid values.9
+- Properties.StatusMap :: /string/ one of the valid predefined mappings below
+
+**** StatusMap
+
+***** CloudFormationStack
+
+#+BEGIN_SRC go
+  var StatusMapCFNStacks = map[string]struct {
+          Color      string
+          StatusIcon []string
+  }{
+          // Create block
+          "CREATE_COMPLETE": {
+                  Color: "green",
+                  StatusIcon: []string{
+                          "IconStar",
+                  },
+          },
+          "CREATE_FAILED": {
+                  Color: "red",
+                  StatusIcon: []string{
+                          "IconSect",
+                          "IconBlank",
+                  },
+          },
+          "CREATE_IN_PROGRESS": {
+                  Color: "cyan",
+                  StatusIcon: []string{
+                          "IconSect",
+                          "IconBlank",
+                  },
+          },
+          // Delete block
+          "DELETE_IN_PROGRESS": {
+                  Color: "default",
+                  StatusIcon: []string{
+                          "IconCrossmark",
+                          "IconBlank",
+                  },
+          },
+          "DELETE_FAILED": {
+                  Color: "red",
+                  StatusIcon: []string{
+                          "IconCrossmark",
+                          "IconBlank",
+                  },
+          },
+          // Rollback block
+          "ROLLBACK_COMPLETE": {
+                  Color: "green",
+                  StatusIcon: []string{
+                          "IconSquare",
+                  },
+          },
+          "ROLLBACK_IN_PROGRESS": {
+                  Color: "cyan",
+                  StatusIcon: []string{
+                          "IconSquare",
+                          "IconEmptySquare",
+                  },
+          },
+          "ROLLBACK_FAILED": {
+                  Color: "red",
+                  StatusIcon: []string{
+                          "IconSquare",
+                          "IconEmptySquare",
+                  },
+          },
+          // Update block
+          "UPDATE_COMPLETE": {
+                  Color: "green",
+                  StatusIcon: []string{
+                          "IconStar",
+                  },
+          },
+          "UPDATE_IN_PROGRESS": {
+                  Color: "cyan",
+                  StatusIcon: []string{
+                          "IconStar",
+                          "IconEmptyStar",
+                  },
+          },
+          "UPDATE_COMPLETE_CLEANUP_IN_PROGRESS": {
+                  Color: "yellow",
+                  StatusIcon: []string{
+                          "IconStar",
+                          "IconEmptyStar",
+                  },
+          },
+          "UPDATE_ROLLBACK_COMPLETE_CLEANUP_IN_PROGRESS": {
+                  Color: "yellow",
+                  StatusIcon: []string{
+                          "IconStar",
+                          "IconEmptyStar",
+                  },
+          },
+          "UPDATE_ROLLBACK_COMPLETE": {
+                  Color: "yellow",
+                  StatusIcon: []string{
+                          "IconStar",
+                  },
+          },
+          "UPDATE_ROLLBACK_FAILED": {
+                  Color: "red",
+                  StatusIcon: []string{
+                          "IconStar",
+                  },
+          },
+          "UPDATE_ROLLBACK_IN_PROGRESS": {
+                  Color: "yellow",
+                  StatusIcon: []string{
+                          "IconStar",
+                          "IconEmptyStar",
+                  },
+          },
+          "REVIEW_IN_PROGRESS": {
+                  Color: "yellow",
+                  StatusIcon: []string{
+                          "IconEmptyTriangle",
+                          "IconBlank",
+                  },
+          },
+  }
+#+END_SRC
+
+***** CodePipeline
+
+#+BEGIN_SRC go
+  var StatusMapCodePipeline = map[string]struct {
+          Color      string
+          StatusIcon []string
+  }{
+          "INPROGRESS": {
+                  Color: "cyan",
+                  StatusIcon: []string{
+                          "IconOfCircle",
+                          "IconCircle",
+                  },
+          },
+          "SUCCEEDED": {
+                  Color: "green",
+                  StatusIcon: []string{
+                          "IconStar",
+                  },
+          },
+          "FAILED": {
+                  Color: "red",
+                  StatusIcon: []string{
+                          "IconSun",
+                          "IconBlank",
+                  },
+          },
+          "SUPERSEDED": {
+                  Color: "red",
+                  StatusIcon: []string{
+                          "IconCrossmark",
+                          "IconBlank",
+                  },
+          },
+  }
+#+END_SRC
